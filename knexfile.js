@@ -13,9 +13,18 @@ module.exports = {
     },
     migrations: {
       directory: './migrations',
-      tableName: 'knex_migrations'
+      tableName: 'knex_migrations',
     },
-    // Optional: for better error handling/debugging
-    debug: true 
-  }
+    debug: true,
+  },
+
+  production: {
+    client: 'mysql2',
+    connection: process.env.JAWSDB_URL, // 👈 Use Heroku JawsDB connection string
+    migrations: {
+      directory: './migrations',
+      tableName: 'knex_migrations',
+    },
+    pool: { min: 2, max: 10 }, // optional but recommended for Heroku
+  },
 };
