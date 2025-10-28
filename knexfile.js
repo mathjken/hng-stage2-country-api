@@ -1,7 +1,6 @@
-// Load environment variables for configuration
 require('dotenv').config({ path: './.env' });
 
-module.exports = {
+const dbConfig = {
   development: {
     client: 'mysql2',
     connection: {
@@ -20,11 +19,13 @@ module.exports = {
 
   production: {
     client: 'mysql2',
-    connection: process.env.JAWSDB_URL, // 👈 Use Heroku JawsDB connection string
+    connection: process.env.JAWSDB_URL, // ✅ Heroku auto-provides this
     migrations: {
       directory: './migrations',
       tableName: 'knex_migrations',
     },
-    pool: { min: 2, max: 10 }, // optional but recommended for Heroku
+    pool: { min: 2, max: 10 },
   },
 };
+
+module.exports = dbConfig;
