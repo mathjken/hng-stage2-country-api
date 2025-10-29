@@ -48,10 +48,10 @@ async function refreshCountriesData() {
             const multiplier = getRandomMultiplier();
             // Formula: population × random(1000–2000) ÷ exchange_rate
             estimated_gdp = (population * multiplier) / exchange_rate;
-        } else if (currency_code === null) {
-            // Rule: If currencies array is empty, set estimated_gdp to 0
-            estimated_gdp = 0;
-        }
+        } 
+        
+        // Note: The previous 'else if (currency_code === null) { estimated_gdp = 0; }' is now handled 
+        // by the final construction, which is cleaner and ensures non-null values.
         
         // --- Construct Final Object ---
         const countryRecord = {
@@ -59,8 +59,10 @@ async function refreshCountriesData() {
             capital: country.capital || null,
             region: country.region || null,
             population: population,
-            exchange_rate: exchange_rate,
-            estimated_gdp: estimated_gdp,
+            // FIX: Ensure exchange_rate and estimated_gdp default to 0 to satisfy NOT NULL constraints.
+            exchange_rate: exchange_rate || 0,        // <-- FIXED
+            estimated_gdp: estimated_gdp || 0,        // <-- FIXED
+            
             flag_url: country.flag || null,
             last_refreshed_at: refreshTimestamp,
         };
@@ -89,8 +91,9 @@ async function refreshCountriesData() {
         const updatePromises = [];
 
         for (const record of processedCountries) {
+            // Case-insensitive check for update
             if (existingNames.has(record.name.toLowerCase())) {
-                // Update Logic (case-insensitive name match)
+                // Update Logic 
                 updatePromises.push(
                     trx('countries')
                         .whereRaw('LOWER(name) = ?', [record.name.toLowerCase()])
@@ -110,13 +113,14 @@ async function refreshCountriesData() {
 
         // 4. Update Status Table and Fetch Top 5
         const totalCountries = await trx('countries').count('id as total').first();
-        finalCountryCount = totalCountries ? totalCountries.total : 0;
+        finalCountryCount = totalCountries ? parseInt(totalCountries.total) : 0;
 
         topFiveCountries = await trx('countries')
             .select('name', 'estimated_gdp')
             .orderBy('estimated_gdp', 'desc')
             .limit(5);
         
+        // Assuming status table already has one row (from migration)
         await trx('status')
             .where('id', 1)
             .update({

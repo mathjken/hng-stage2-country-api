@@ -1,9 +1,12 @@
 const knexfile = require('./knexfile');
 const knex = require('knex');
 
-// Use 'production' config if JAWSDB_URL exists (Heroku), otherwise 'development'
+// Determine the environment: 
+// Use 'production' if JAWSDB_URL is set (which Heroku/JawsDB does automatically), 
+// otherwise use 'development'.
 const env = process.env.JAWSDB_URL ? 'production' : 'development';
 
+// Load the appropriate configuration from knexfile.js
 const db = knex(knexfile[env]);
 
 // Simple check to ensure connection is working on startup
@@ -13,7 +16,7 @@ db.raw('SELECT 1')
   })
   .catch((err) => {
     console.error(`❌ Failed to establish MySQL connection (${env}):`, err.message);
-    // Exit process if DB connection fails
+    // Crucial: Exit process if DB connection fails, as the API is useless without it
     process.exit(1);
   });
 
