@@ -1,3 +1,5 @@
+// routes/countryRoutes.js (Fixed)
+
 const express = require('express');
 const router = express.Router();
 const db = require('../db'); // Knex connection
@@ -68,26 +70,7 @@ router.get('/image', async (req, res) => {
     }
 });
 
-// 3. GET /status - Returns current cache status.
-router.get('/status', async (req, res) => {
-    try {
-        const status = await db('status').where({ id: 1 }).first();
-
-        if (!status) {
-            // This should only happen if the migrations failed.
-            return res.status(500).json({ error: 'Database status record not found.' });
-        }
-
-        res.status(200).json({
-            total_countries: status.total_countries,
-            last_refreshed_at: status.last_refreshed_at ? status.last_refreshed_at.toISOString() : null,
-            cache_status: status.total_countries > 0 ? 'READY' : 'EMPTY',
-        });
-    } catch (error) {
-        console.error('Error fetching status:', error);
-        res.status(500).json({ error: 'Internal server error while fetching status.' });
-    }
-});
+// 3. GET /status - ***REMOVED*** (Assumed moved to server.js)
 
 // 4. GET /countries - Handles listing, filtering, pagination, and sorting.
 router.get('/', async (req, res) => {
@@ -157,8 +140,8 @@ router.get('/:country', async (req, res) => {
 
     try {
         const country = await db('countries')
-            .whereRaw('LOWER(name) = ?', [countryName]) // Case-insensitive lookup by name
-            .orWhereRaw('LOWER(capital) = ?', [countryName]) // Search by capital
+            .whereRaw('LOWER(name) = ?', [countryName]) 
+            .orWhereRaw('LOWER(capital) = ?', [countryName]) 
             .select('*')
             .first();
 
@@ -195,20 +178,17 @@ router.delete('/:name', async (req, res) => {
                 .whereRaw('LOWER(name) = ?', [countryName])
                 .del();
             
-            if (deletedCount === 0) {
-                // Country not found to delete
-                return;
+            if (deletedCount > 0) { // Only update count if something was actually deleted
+                // Update status table count immediately
+                const totalResult = await trx('countries').count('id as total').first();
+                const newTotal = parseInt(totalResult.total);
+
+                await trx('status')
+                    .where('id', 1)
+                    .update({
+                        total_countries: newTotal,
+                    });
             }
-
-            // Update status table count immediately
-            const totalResult = await trx('countries').count('id as total').first();
-            const newTotal = parseInt(totalResult.total);
-
-            await trx('status')
-                .where('id', 1)
-                .update({
-                    total_countries: newTotal,
-                });
         });
 
         if (deletedCount === 0) {
