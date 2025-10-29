@@ -4,6 +4,21 @@ const db = require("../db");
 const { refreshCountriesData } = require("../services/dataProcessor");
 const { generateSummaryImage } = require("../services/imageService");
 
+// --- STATUS must come before :name route ---
+router.get("/status", async (req, res) => {
+  try {
+    const status = await db("status").first();
+    res.json({
+      total_countries: status?.total_countries || 0,
+      last_refreshed_at: status?.last_refreshed_at || null,
+      cache_status: "READY",
+    });
+  } catch (error) {
+    console.error("GET /status error:", error);
+    res.status(500).json({ error: "Failed to fetch status" });
+  }
+});
+
 // POST /countries/refresh
 router.post("/refresh", async (req, res) => {
   try {
@@ -19,7 +34,7 @@ router.post("/refresh", async (req, res) => {
   }
 });
 
-// GET /countries (optional filters)
+// GET /countries
 router.get("/", async (req, res) => {
   try {
     let query = db("countries");
@@ -73,21 +88,6 @@ router.delete("/:name", async (req, res) => {
   } catch (error) {
     console.error("DELETE error:", error);
     res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-// GET /countries/status
-router.get("/status", async (req, res) => {
-  try {
-    const status = await db("status").first();
-    res.json({
-      total_countries: status?.total_countries || 0,
-      last_refreshed_at: status?.last_refreshed_at || null,
-      cache_status: "READY",
-    });
-  } catch (error) {
-    console.error("GET /status error:", error);
-    res.status(500).json({ error: "Failed to fetch status" });
   }
 });
 
