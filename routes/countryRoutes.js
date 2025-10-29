@@ -1,207 +1,111 @@
-// routes/countryRoutes.js (Fixed)
-
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const db = require('../db'); // Knex connection
-const { refreshCountriesData } = require('../services/dataProcessor');
-const { IMAGE_PATH } = require('../services/imageService');
-const fs = require('fs/promises');
-const path = require('path');
+const db = require("../db");
+const { refreshCountriesData } = require("../services/countryService");
+const { generateSummaryImage } = require("../services/imageService");
 
-// --- HELPER FUNCTIONS ---
-
-/**
- * Normalizes query parameter names for comparison.
- */
-function normalizeParam(param) {
-    if (!param) return null;
-    return param.trim().toLowerCase();
-}
-
-// --- CORE ENDPOINTS ---
-
-// 1. POST /countries/refresh - Triggers data fetching, processing, and caching.
-router.post('/refresh', async (req, res) => {
-    try {
-        const result = await refreshCountriesData();
-        
-        res.status(200).json({
-            message: 'Country data successfully refreshed and cached. Summary image generated.',
-            total_countries: result.totalRecords,
-            last_refreshed_at: result.timestamp.toISOString(),
-        });
-    } catch (error) {
-        // External API Error Handling (Rule: 503 Service Unavailable)
-        if (error.isExternalError) {
-            console.error(`External Error: ${error.message}`);
-            return res.status(503).json({
-                error: "External data source unavailable",
-                details: error.message,
-            });
-        }
-        
-        // General Internal Server Error
-        console.error('Internal Server Error during refresh:', error);
-        res.status(500).json({ 
-            error: "Internal server error",
-            details: error.message,
-        });
-    }
+// POST /countries/refresh
+router.post("/countries/refresh", async (req, res) => {
+  try {
+    const { totalRecords, timestamp } = await refreshCountriesData();
+    res.json({
+      message: "Country data successfully refreshed and cached. Summary image generated.",
+      total_countries: totalRecords,
+      last_refreshed_at: timestamp,
+    });
+  } catch (error) {
+    console.error("Refresh error:", error);
+    res.status(500).json({ error: "Failed to refresh country data" });
+  }
 });
 
-// 2. GET /countries/image - Serves the cached summary image.
-router.get('/image', async (req, res) => {
-    try {
-        // Check if the image file exists
-        await fs.access(IMAGE_PATH); 
-        
-        // Serve the image file
-        res.sendFile(path.resolve(IMAGE_PATH));
-
-    } catch (error) {
-        // If the file does not exist (ENOENT)
-        if (error.code === 'ENOENT') {
-            return res.status(404).json({
-                error: 'Image not found. Run POST /countries/refresh first to generate the summary image.',
-            });
-        }
-        console.error('Error serving image:', error);
-        res.status(500).json({ error: 'Internal server error while retrieving image.' });
-    }
+// GET /countries (optional filters)
+router.get("/countries", async (req, res) => {
+  try {
+    let query = db("countries");
+    if (req.query.region) query = query.where("region", req.query.region);
+    if (req.query.sortBy) query = query.orderBy(req.query.sortBy, req.query.order || "asc");
+    const countries = await query.select("*");
+    res.json(countries);
+  } catch (error) {
+    console.error("GET /countries error:", error);
+    res.status(500).json({ error: "Failed to fetch countries" });
+  }
 });
 
-// 3. GET /status - ***REMOVED*** (Assumed moved to server.js)
-
-// 4. GET /countries - Handles listing, filtering, pagination, and sorting.
-router.get('/', async (req, res) => {
-    try {
-        // Pagination
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 20;
-        const offset = (page - 1) * limit;
-
-        // Filtering
-        const region = normalizeParam(req.query.region);
-        const currency = normalizeParam(req.query.currency);
-        
-        // Sorting
-        const sortBy = normalizeParam(req.query.sortBy) || 'name';
-        const sortOrder = normalizeParam(req.query.sortOrder) === 'desc' ? 'desc' : 'asc';
-        
-        const validSortColumns = ['name', 'region', 'population', 'estimated_gdp'];
-        const orderByColumn = validSortColumns.includes(sortBy) ? sortBy : 'name';
-
-        // Base Query
-        let query = db('countries');
-
-        // Apply Filters
-        if (region) {
-            query = query.whereRaw('LOWER(region) = ?', [region]);
-        }
-        if (currency) {
-            query = query.whereRaw('LOWER(currency_code) = ?', [currency]);
-        }
-
-        // 1. Get total count for pagination metadata
-        const totalResult = await query.clone().count('id as total').first();
-        const totalCount = parseInt(totalResult.total);
-
-        // 2. Get the paginated data
-        const data = await query
-            .select('name', 'capital', 'region', 'population', 'currency_code', 'exchange_rate', 'estimated_gdp', 'flag_url')
-            .orderBy(orderByColumn, sortOrder)
-            .limit(limit)
-            .offset(offset);
-
-        res.status(200).json({
-            meta: {
-                total: totalCount,
-                page: page,
-                limit: limit,
-                pages: Math.ceil(totalCount / limit),
-                sort: `${orderByColumn}:${sortOrder}`,
-            },
-            data: data,
-        });
-
-    } catch (error) {
-        console.error('Error fetching countries:', error);
-        res.status(500).json({ error: 'Internal server error while fetching countries.' });
-    }
+// GET /countries/:name
+router.get("/countries/:name", async (req, res) => {
+  try {
+    const country = await db("countries")
+      .whereRaw("LOWER(name) = ?", [req.params.name.toLowerCase()])
+      .first();
+    if (!country) return res.status(404).json({ error: "Country not found" });
+    res.json(country);
+  } catch (error) {
+    console.error("GET /countries/:name error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
-// 5. GET /countries/:country - Single country lookup by name.
-router.get('/:country', async (req, res) => {
-    const countryName = normalizeParam(req.params.country);
+// DELETE /countries/:name
+router.delete("/countries/:name", async (req, res) => {
+  try {
+    const { name } = req.params;
+    const existing = await db("countries")
+      .whereRaw("LOWER(name) = ?", [name.toLowerCase()])
+      .first();
 
-    if (!countryName) {
-        return res.status(400).json({ error: 'Country name parameter is required.' });
-    }
+    if (!existing)
+      return res.status(404).json({ error: "Country not found" });
 
-    try {
-        const country = await db('countries')
-            .whereRaw('LOWER(name) = ?', [countryName]) 
-            .orWhereRaw('LOWER(capital) = ?', [countryName]) 
-            .select('*')
-            .first();
+    await db("countries").whereRaw("LOWER(name) = ?", [name.toLowerCase()]).del();
 
-        if (!country) {
-            return res.status(404).json({ error: 'Country not found' });
-        }
+    const total = await db("countries").count("id as total").first();
+    await db("status").where("id", 1).update({
+      total_countries: total ? parseInt(total.total) : 0,
+      last_refreshed_at: new Date(),
+    });
 
-        // Exclude internal fields before sending
-        delete country.id; 
-        delete country.last_refreshed_at;
-
-        res.status(200).json(country);
-
-    } catch (error) {
-        console.error('Error fetching single country:', error);
-        res.status(500).json({ error: 'Internal server error while fetching country details.' });
-    }
+    res.json({
+      message: `Country '${name}' deleted successfully.`,
+      remaining_countries: total ? parseInt(total.total) : 0,
+    });
+  } catch (error) {
+    console.error("DELETE error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
-// 6. DELETE /countries/:name - Delete a country record by name.
-router.delete('/:name', async (req, res) => {
-    const countryName = normalizeParam(req.params.name);
-
-    if (!countryName) {
-        return res.status(400).json({ error: 'Validation failed', details: { name: 'is required' } });
-    }
-
-    let deletedCount = 0;
-
-    try {
-        await db.transaction(async (trx) => {
-            // Delete the country record (case-insensitive match)
-            deletedCount = await trx('countries')
-                .whereRaw('LOWER(name) = ?', [countryName])
-                .del();
-            
-            if (deletedCount > 0) { // Only update count if something was actually deleted
-                // Update status table count immediately
-                const totalResult = await trx('countries').count('id as total').first();
-                const newTotal = parseInt(totalResult.total);
-
-                await trx('status')
-                    .where('id', 1)
-                    .update({
-                        total_countries: newTotal,
-                    });
-            }
-        });
-
-        if (deletedCount === 0) {
-            return res.status(404).json({ error: 'Country not found' });
-        }
-
-        res.status(200).json({ message: `Country '${req.params.name}' successfully deleted.`, deleted_count: deletedCount });
-
-    } catch (error) {
-        console.error('Error deleting country:', error);
-        res.status(500).json({ error: 'Internal server error while deleting country.' });
-    }
+// GET /status
+router.get("/status", async (req, res) => {
+  try {
+    const status = await db("status").first();
+    res.json({
+      total_countries: status?.total_countries || 0,
+      last_refreshed_at: status?.last_refreshed_at || null,
+      cache_status: "READY",
+    });
+  } catch (error) {
+    console.error("GET /status error:", error);
+    res.status(500).json({ error: "Failed to fetch status" });
+  }
 });
 
+// GET /countries/image
+router.get("/countries/image", async (req, res) => {
+  try {
+    const fs = require("fs");
+    const path = require("path");
+    const imagePath = path.join(__dirname, "../public/summary.png");
+    if (!fs.existsSync(imagePath)) {
+      await generateSummaryImage(0, new Date(), []);
+    }
+    res.setHeader("Content-Type", "image/png");
+    fs.createReadStream(imagePath).pipe(res);
+  } catch (error) {
+    console.error("GET /countries/image error:", error);
+    res.status(500).json({ error: "Failed to retrieve image" });
+  }
+});
 
 module.exports = router;
