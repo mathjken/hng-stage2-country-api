@@ -5,7 +5,7 @@ const { refreshCountriesData } = require("../services/dataProcessor");
 const { generateSummaryImage } = require("../services/imageService");
 
 // POST /countries/refresh
-router.post("/countries/refresh", async (req, res) => {
+router.post("/refresh", async (req, res) => {
   try {
     const { totalRecords, timestamp } = await refreshCountriesData();
     res.json({
@@ -20,7 +20,7 @@ router.post("/countries/refresh", async (req, res) => {
 });
 
 // GET /countries (optional filters)
-router.get("/countries", async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     let query = db("countries");
     if (req.query.region) query = query.where("region", req.query.region);
@@ -34,7 +34,7 @@ router.get("/countries", async (req, res) => {
 });
 
 // GET /countries/:name
-router.get("/countries/:name", async (req, res) => {
+router.get("/:name", async (req, res) => {
   try {
     const country = await db("countries")
       .whereRaw("LOWER(name) = ?", [req.params.name.toLowerCase()])
@@ -48,7 +48,7 @@ router.get("/countries/:name", async (req, res) => {
 });
 
 // DELETE /countries/:name
-router.delete("/countries/:name", async (req, res) => {
+router.delete("/:name", async (req, res) => {
   try {
     const { name } = req.params;
     const existing = await db("countries")
@@ -76,7 +76,7 @@ router.delete("/countries/:name", async (req, res) => {
   }
 });
 
-// GET /status
+// GET /countries/status
 router.get("/status", async (req, res) => {
   try {
     const status = await db("status").first();
@@ -92,7 +92,7 @@ router.get("/status", async (req, res) => {
 });
 
 // GET /countries/image
-router.get("/countries/image", async (req, res) => {
+router.get("/image", async (req, res) => {
   try {
     const fs = require("fs");
     const path = require("path");
@@ -103,7 +103,7 @@ router.get("/countries/image", async (req, res) => {
     res.setHeader("Content-Type", "image/png");
     fs.createReadStream(imagePath).pipe(res);
   } catch (error) {
-    console.error("GET /countries/image error:", error);
+    console.error("GET /image error:", error);
     res.status(500).json({ error: "Failed to retrieve image" });
   }
 });
