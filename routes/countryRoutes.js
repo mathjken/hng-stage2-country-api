@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../db");
-const { refreshCountriesData } = require("../services/countryService");
+const { refreshCountriesData } = require("../services/dataProcessor");
 const { generateSummaryImage } = require("../services/imageService");
 
 // POST /countries/refresh
