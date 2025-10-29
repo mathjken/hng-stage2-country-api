@@ -4,21 +4,6 @@ const db = require("../db");
 const { refreshCountriesData } = require("../services/dataProcessor");
 const { generateSummaryImage } = require("../services/imageService");
 
-// --- STATUS must come before :name route ---
-router.get("/status", async (req, res) => {
-  try {
-    const status = await db("status").first();
-    res.json({
-      total_countries: status?.total_countries || 0,
-      last_refreshed_at: status?.last_refreshed_at || null,
-      cache_status: "READY",
-    });
-  } catch (error) {
-    console.error("GET /status error:", error);
-    res.status(500).json({ error: "Failed to fetch status" });
-  }
-});
-
 // POST /countries/refresh
 router.post("/refresh", async (req, res) => {
   try {
@@ -34,12 +19,19 @@ router.post("/refresh", async (req, res) => {
   }
 });
 
-// GET /countries
+// GET /countries (filters & sorting)
 router.get("/", async (req, res) => {
   try {
     let query = db("countries");
+
     if (req.query.region) query = query.where("region", req.query.region);
-    if (req.query.sortBy) query = query.orderBy(req.query.sortBy, req.query.order || "asc");
+    if (req.query.currency) query = query.where("currency_code", req.query.currency);
+
+    if (req.query.sortBy) {
+      const order = req.query.order && req.query.order.toLowerCase() === "desc" ? "desc" : "asc";
+      query = query.orderBy(req.query.sortBy, order);
+    }
+
     const countries = await query.select("*");
     res.json(countries);
   } catch (error) {
@@ -70,24 +62,38 @@ router.delete("/:name", async (req, res) => {
       .whereRaw("LOWER(name) = ?", [name.toLowerCase()])
       .first();
 
-    if (!existing)
-      return res.status(404).json({ error: "Country not found" });
+    if (!existing) return res.status(404).json({ error: "Country not found" });
 
     await db("countries").whereRaw("LOWER(name) = ?", [name.toLowerCase()]).del();
 
     const total = await db("countries").count("id as total").first();
     await db("status").where("id", 1).update({
-      total_countries: total ? parseInt(total.total) : 0,
+      total_countries: Number(total?.total) || 0,
       last_refreshed_at: new Date(),
     });
 
     res.json({
       message: `Country '${name}' deleted successfully.`,
-      remaining_countries: total ? parseInt(total.total) : 0,
+      remaining_countries: Number(total?.total) || 0,
     });
   } catch (error) {
     console.error("DELETE error:", error);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// GET /countries/status
+router.get("/status", async (req, res) => {
+  try {
+    const status = await db("status").first();
+    res.json({
+      total_countries: Number(status?.total_countries) || 0,
+      last_refreshed_at: status?.last_refreshed_at || null,
+      cache_status: Number(status?.total_countries) > 0 ? "READY" : "EMPTY",
+    });
+  } catch (error) {
+    console.error("GET /status error:", error);
+    res.status(500).json({ error: "Failed to fetch status" });
   }
 });
 
@@ -97,11 +103,15 @@ router.get("/image", async (req, res) => {
     const fs = require("fs");
     const path = require("path");
     const imagePath = path.join(__dirname, "../public/summary.png");
+
     if (!fs.existsSync(imagePath)) {
       await generateSummaryImage(0, new Date(), []);
     }
+
     res.setHeader("Content-Type", "image/png");
-    fs.createReadStream(imagePath).pipe(res);
+    fs.createReadStream(imagePath)
+      .on("error", () => res.status(500).json({ error: "Failed to stream image" }))
+      .pipe(res);
   } catch (error) {
     console.error("GET /image error:", error);
     res.status(500).json({ error: "Failed to retrieve image" });

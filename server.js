@@ -1,36 +1,27 @@
-// Load environment variables from .env file
 require('dotenv').config();
-
 const express = require('express');
 const app = express();
-
-// --- Core Dependencies ---
 const db = require('./db');
 const countryRoutes = require('./routes/countryRoutes');
 
-// Use PORT from .env or default to 3000
 const PORT = process.env.PORT || 3000;
 
-// Middleware for parsing JSON
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// --- API Routes ---
 app.use('/countries', countryRoutes);
 
-// --- Global Status Route ---
 app.get('/status', async (req, res) => {
   try {
     const status = await db('status').where({ id: 1 }).first();
-    if (!status) {
-      return res.status(500).json({ error: 'Database status record not found.' });
-    }
+    if (!status) return res.status(500).json({ error: 'Database status record not found.' });
+
     res.status(200).json({
-      total_countries: status.total_countries,
+      total_countries: Number(status.total_countries) || 0,
       last_refreshed_at: status.last_refreshed_at
         ? status.last_refreshed_at.toISOString()
         : null,
-      cache_status: status.total_countries > 0 ? 'READY' : 'EMPTY',
+      cache_status: Number(status.total_countries) > 0 ? 'READY' : 'EMPTY',
     });
   } catch (error) {
     console.error('Error fetching status:', error);
@@ -38,13 +29,9 @@ app.get('/status', async (req, res) => {
   }
 });
 
-// --- Root sanity check ---
-app.get('/', (req, res) => {
-  res.send('🌍 Country Currency & Exchange API is running successfully!');
-});
+app.get('/', (req, res) => res.send('Country Currency & Exchange API is running!'));
 
-// --- Start Server ---
 app.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
-  console.log(`🌐 Base URL: http://localhost:${PORT}`);
+  console.log(`Server running on port ${PORT}`);
+  console.log(`Database: ${process.env.DB_NAME}`);
 });
