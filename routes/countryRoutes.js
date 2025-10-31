@@ -20,25 +20,16 @@ router.post("/refresh", async (req, res) => {
 });
 
 // GET /countries (filters & sorting)
-router.get("/", async (req, res) => {
-  try {
-    let query = db("countries");
+if (req.query.sortBy) {
+  const order = req.query.order && req.query.order.toLowerCase() === "desc" ? "desc" : "asc";
 
-    if (req.query.region) query = query.where("region", req.query.region);
-    if (req.query.currency) query = query.where("currency_code", req.query.currency);
-
-    if (req.query.sortBy) {
-      const order = req.query.order && req.query.order.toLowerCase() === "desc" ? "desc" : "asc";
-      query = query.orderBy(req.query.sortBy, order);
-    }
-
-    const countries = await query.select("*");
-    res.json(countries);
-  } catch (error) {
-    console.error("GET /countries error:", error);
-    res.status(500).json({ error: "Failed to fetch countries" });
+  if (req.query.sortBy === "estimated_gdp") {
+    query = query.orderByRaw("CAST(estimated_gdp AS FLOAT) " + order);
+  } else {
+    query = query.orderBy(req.query.sortBy, order);
   }
-});
+}
+
 
 // GET /countries/:name
 router.get("/:name", async (req, res) => {
@@ -105,17 +96,22 @@ router.get("/image", async (req, res) => {
     const imagePath = path.join(__dirname, "../public/summary.png");
 
     if (!fs.existsSync(imagePath)) {
+      console.log("Image not found — generating new one...");
       await generateSummaryImage(0, new Date(), []);
     }
 
     res.setHeader("Content-Type", "image/png");
-    fs.createReadStream(imagePath)
-      .on("error", () => res.status(500).json({ error: "Failed to stream image" }))
-      .pipe(res);
+    const stream = fs.createReadStream(imagePath);
+    stream.on("error", (err) => {
+      console.error("Error reading image:", err);
+      res.status(500).json({ error: "Failed to read summary image" });
+    });
+    stream.pipe(res);
   } catch (error) {
     console.error("GET /image error:", error);
     res.status(500).json({ error: "Failed to retrieve image" });
   }
 });
+
 
 module.exports = router;
